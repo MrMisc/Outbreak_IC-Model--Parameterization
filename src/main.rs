@@ -348,8 +348,9 @@ pub struct host{
 }
 //Note that if you want to adjust the number of zones, you have to, in addition to adjusting the individual values to your liking per zone, also need to change the slice types below!
 //Parameterization options
-const ACCELERATION:f64 = 0.5; //factor by which delta is decreased as we approach better fit value i.e. Bigger value -> More aggressive
+const ACCELERATION:f64 = 0.8; //factor by which delta is decreased as we approach better fit value i.e. Bigger value -> More aggressive
 const DECELERATION:f64 = 0.2; //factor that represents the percentage value of a delta change we take as rate of objective function decrease (trending towards ideal solution - decreases)
+const PINPOINT:bool = true;
 //I.e. Smaller figure -> More punishing
 //Resolution
 const STEP:[[usize;3];1] = [[100,30,5]];  //Unit distance of segments ->Could be used to make homogeneous zoning (Might not be very flexible a modelling decision)
@@ -1227,16 +1228,17 @@ fn parameterize(ind:Vec<usize>,epoch:usize, rollover:usize,values_and_deltas:Vec
     //First consider that we only wish to allow one or more out of the 8 available variables to be changed.
     //Extract public values
     let mut ini:[f64;8] = [ADJUSTED_TIME_TO_COLONIZE[0],ADJUSTED_TIME_TO_COLONIZE[1],PROBABILITY_OF_HORIZONTAL_TRANSMISSION,RECOVERY_RATE[0],RECOVERY_RATE[1],LISTOFPROBABILITIES[0],FEED_INFECTION_RATE,HOST_0];
-    let mut prev_ini:[f64;8] = ini.clone();
     //Change out the values we wish to change with the average of the values presented inside rollover for the indices indicated by ind
     let mut tt:usize = 0;
     for ele in ind.clone(){
         ini[ele] = values_and_deltas[tt][0]+values_and_deltas[tt][1];
         ini[ele] /= 2.0;
     }
+    let mut prev_ini:[f64;8] = ini.clone();
     //MSE objective scores
     let mut MSE_previous:f64 = test(ini,fit_to.clone());
     let mut MSE:f64 = test(ini,fit_to.clone());
+    let MSE_0:f64 = (MSE_previous+MSE+test(ini,fit_to.clone()))/3.0; //take the average of 3 readings as a baseline to compare to
     //MSE deltas
     let mut delta:f64 =(MSE-MSE_previous).abs();
     let mut delta_previous:f64 = 1.0;
@@ -1254,7 +1256,7 @@ fn parameterize(ind:Vec<usize>,epoch:usize, rollover:usize,values_and_deltas:Vec
             MSE_previous = MSE.clone();
             MSE = test(ini,fit_to.clone());
             delta_previous = delta.clone();
-            delta = MSE - MSE_previous; //if negative, we are approaching solution
+            delta = MSE - MSE_previous; //if negative, we are approaching solution -> we do not need to consider abs() here because MSE is innately positive
             delta_ratio_previous = delta_ratio.clone();
             delta_ratio = (delta/delta_previous).abs();
             println!("MSE previous {} vs MSE {} at epoch {} - fitted factor value is {}", MSE_previous,MSE,run.clone(),ini[var_index]);
@@ -1264,6 +1266,7 @@ fn parameterize(ind:Vec<usize>,epoch:usize, rollover:usize,values_and_deltas:Vec
             }
             unit[8] += MSE;
             output.push(unit);
+            if MSE<1.0 && PINPOINT{break;}
             if MSE<MSE_previous{
                 //in otherwords, if we are moving in the direction that we want... -> maintain polarity and just add delta at least
                 if direction{
@@ -1280,8 +1283,13 @@ fn parameterize(ind:Vec<usize>,epoch:usize, rollover:usize,values_and_deltas:Vec
                         }
                     }
                 }
+                if MSE/MSE_0<0.05{
+                    reward_counter = limits::min(reward_counter,MSE/MSE_0);
+                }
             }else if MSE == MSE_previous && ini[var_index]>=values_and_deltas[tt][0] && ini[var_index]<=values_and_deltas[tt][1]{
                 println!("We reached some potential minima... Investigating");
+                direction_polarity*=-1.0;
+                reward_counter*=(1.0+ACCELERATION);
             }else{// i.e. MSE has increased now!
                 if delta_previous<0.0{
                     //Here, it means we were approaching solution previously!!
@@ -1294,9 +1302,11 @@ fn parameterize(ind:Vec<usize>,epoch:usize, rollover:usize,values_and_deltas:Vec
                     direction_polarity *= -1.0;
                 }
             }
+            prev_ini = ini.clone();
             ini[var_index] += direction_polarity*reward_counter*values_and_deltas[tt][2];
             ini[var_index] = limits::max(values_and_deltas[tt][0],ini[var_index]);
             ini[var_index] = limits::min(values_and_deltas[tt][1],ini[var_index]);
+            direction = MSE<MSE_previous;
         }
         tt+=1;
     }
@@ -1310,25 +1320,32 @@ fn main(){
     //Changing parameter values 
     //parameters vector is to contain the following parameters in order : [ADJUSTED COLONIZATION TIME 0,ADJUSTED COLONIZATION TIME 1,Deposit probability (horizontal), recovery rate 0, recovery rate 1, probability of disease transmission (contact),feed infection probability ]
     let parameters:[f64;8] = [ADJUSTED_TIME_TO_COLONIZE[0],ADJUSTED_TIME_TO_COLONIZE[1],PROBABILITY_OF_HORIZONTAL_TRANSMISSION,RECOVERY_RATE[0],RECOVERY_RATE[1],LISTOFPROBABILITIES[0],FEED_INFECTION_RATE,HOST_0];
-    let delta:Vec<[f64;9]> = parameterize(ind.clone(),epochs,1,vec![[0.05,0.35,0.005]],vec![(40,33.3333),(15230,72.0)]); //percentage values MUST be in percentage NOT actual <1 numbers -> reason: using MSE
+    let delta:Vec<[f64;9]> = parameterize(ind.clone(),epochs,1,vec![[0.1,0.5,0.05]],vec![(40,33.3333),(230,72.0)]); //percentage values MUST be in percentage NOT actual <1 numbers -> reason: using MSE
     println!("------------------------------------------------------------------------------------------");
     println!("Optimized variable value is now operation is {} versus the original {}, with a final MSE score of {}",delta[delta.len()-1][6], (0.95+0.1)/2.0,delta[delta.len()-1][8]);
 
     // Extract the last value of each slice as the y-values
     let y_values: Vec<f64> = delta.iter().map(|&slice| slice[8]).collect();
-    let hypertext:Vec<String> = delta.iter().map(|&slice| format!("Generation Time Gamma  shape:{} <br> Generation Time Gamma Rate:{} <br> Deposit Contamination Probability:{} <br> Recovery Rate Gamma Shape:{} <br> Recovery Rate Gamma Rate:{} <br> PROBABILITY OF INFECTION:{} <br> Feed Infection rate:{} <br> Number of infected Host 0s:{}",slice[0],slice[1],slice[2],slice[3],slice[4],slice[5],slice[6],slice[7])).collect();
+    let hypertext:Vec<String> = delta.iter().map(|&slice| format!("Generation Time Gamma Shape:{} <br> Generation Time Gamma Rate:{} <br> Deposit Contamination Probability:{} <br> Recovery Rate Gamma Shape:{} <br> Recovery Rate Gamma Rate:{} <br> PROBABILITY OF INFECTION:{} <br> Feed Infection rate:{} <br> Number of infected Host 0s:{}",slice[0],slice[1],slice[2],slice[3],slice[4],slice[5],slice[6],slice[7])).collect();
     let min_y = y_values.iter().cloned().fold(f64::INFINITY, f64::min);
     let minimum_line:Vec<f64> = vec![min_y;delta.len()];
     println!("min_y vector is {:?}",min_y);
     // Create a scatterplot
+    // let x_values:Vec<f64> = delta.iter().map(|&slice| slice[ind[0]]).collect();
     let scatter = Scatter::new((0..delta.len()).collect(),y_values.clone())
-        .mode(Mode::Markers)
-        .marker(Marker::new().color(Rgba::new(255, 0, 0, 0.5)))
+        .mode(Mode::Lines)
+        .marker(Marker::new().color(Rgba::new(0, 91, 75, 0.35)))
         .text_array(hypertext.clone())
         .name("Scatter Plot");
+    let scatter_addon = Scatter::new((0..delta.len()).collect(),y_values.clone())
+        .mode(Mode::Markers)
+        .marker(Marker::new().color(Rgba::new(0, 118, 97, 1.0)))
+        .text_array(hypertext.clone())
+        .name("Scatter Plot");        
 
     let mut plot = Plot::new();
     plot.add_trace(scatter);
+    plot.add_trace(scatter_addon);
 
     let trace1 = Scatter::new((0..delta.len()).collect(), minimum_line)
     .mode(Mode::Lines)
@@ -1336,7 +1353,7 @@ fn main(){
     .line(plotly::common::Line::new().color("purple").width(0.8 as f64).dash(plotly::common::DashType::LongDashDot));
     plot.add_trace(trace1);
     // Customize the layout
-    let layout = Layout::new().x_axis(Axis::new().title(Title::new("Epochs"))).y_axis(Axis::new().title(Title::new("MSE discrepancy"))).height(720).width(1440);
+    let layout = Layout::new().x_axis(Axis::new().title(Title::new("Epochs"))).y_axis(Axis::new().title(Title::new("MSE discrepancy"))).height(720).width(1440).plot_background_color(Rgba::new(255,246,235,0.7)).paper_background_color(Rgba::new(255,246,235,0.8));
     plot.set_layout(layout);
 
     // Show the plot (generates an HTML file)
@@ -1351,7 +1368,7 @@ fn main(){
         .name("Scatter Plot");
         let mut plot2 = Plot::new();
         plot2.add_trace(scatter);     
-        let layout = Layout::new().x_axis(Axis::new().title(Title::new(&(format!("Factor {}",ele))))).y_axis(Axis::new().title(Title::new("MSE discrepancy"))).height(720).width(1440);
+        let layout = Layout::new().x_axis(Axis::new().title(Title::new(&(format!("Factor {}",ele))))).y_axis(Axis::new().title(Title::new("MSE discrepancy"))).height(720).width(1440).plot_background_color(Rgba::new(255,246,235,0.7)).paper_background_color(Rgba::new(255,246,235,0.8));
         plot2.set_layout(layout);
         plot2.show();
     }
