@@ -1,3 +1,11 @@
+extern crate plotly;
+
+use plotly::common::Line;
+use plotly::common::{Mode,Title,Marker};
+use plotly::color::Rgba;
+use plotly::layout::AxisType;
+use plotly::{Plot, Scatter,Layout};
+use plotly::layout::{Axis,Shape};
 // use std::thread;
 use rand::distributions::Uniform;
 use rand::distributions::{Distribution, Standard};
@@ -299,6 +307,7 @@ impl Zone_3D{
             }else if eviscerator.infected && host.zone == eviscerator.zone{
                 // println!("Confirming that an eviscerator is infected in zone {}",eviscerator.zone);
                 host.infected = host.transfer(limits::max(0.0,1.0-(eviscerator.number_of_times_infected as f64)*EVISCERATOR_TO_HOST_PROBABILITY_DECAY));
+                if host.infected{host.number_of_times_infected+=1;}
                 eviscerator.number_of_times_infected += 1;
                 if host.infected{
                     println!("{} {} {} {} {} {}",host.x,host.y,host.z,11,time,host.zone);
@@ -338,10 +347,14 @@ pub struct host{
     range_z:u64
 }
 //Note that if you want to adjust the number of zones, you have to, in addition to adjusting the individual values to your liking per zone, also need to change the slice types below!
+//Parameterization options
+const ACCELERATION:f64 = 0.5; //factor by which delta is decreased as we approach better fit value i.e. Bigger value -> More aggressive
+const DECELERATION:f64 = 0.2; //factor that represents the percentage value of a delta change we take as rate of objective function decrease (trending towards ideal solution - decreases)
+//I.e. Smaller figure -> More punishing
 //Resolution
-const STEP:[[usize;3];1] = [[400,200,5]];  //Unit distance of segments ->Could be used to make homogeneous zoning (Might not be very flexible a modelling decision)
+const STEP:[[usize;3];1] = [[100,30,5]];  //Unit distance of segments ->Could be used to make homogeneous zoning (Might not be very flexible a modelling decision)
 const HOUR_STEP: f64 = 4.0; //Number of times hosts move per hour
-const LENGTH: usize =5*24; //How long do you want the simulation to be?
+const LENGTH: usize =20*24; //How long do you want the simulation to be?
 //Infection/Colonization module
 // ------------Do only colonized hosts spread disease or do infected hosts spread
 const HOST_0:f64 = 3.0;
@@ -370,7 +383,7 @@ const FAECESTOEGG_CONTACT_SPREAD:bool = true;
 // const INITIAL_COLONIZATION_RATE:f64 = 0.47; //Probability of infection, resulting in colonization -> DAILY RATE ie PER DAY
 //Space
 const LISTOFPROBABILITIES:[f64;1] = [0.17]; //Probability of transfer of samonella per zone - starting from zone 0 onwards
-const GRIDSIZE:[[f64;3];1] = [[100.0,100.0,5.0]];
+const GRIDSIZE:[[f64;3];1] = [[100.0,30.0,5.0]];
 const MAX_MOVE:f64 = 12.5;
 const MEAN_MOVE:f64 = 2.0;
 const STD_MOVE:f64 = 3.0; // separate movements for Z config
@@ -458,6 +471,7 @@ impl host{
             vector.iter_mut().for_each(|mut h|{
                 if h.motile == 0 && !h.infected && h.origin_x == origin_x && h.origin_y == origin_y && h.origin_z == origin_z && h.zone == zone{
                     h.infected = h.transfer(1.0);
+                    if h.infected{h.number_of_times_infected+=1;}
                     println!("{} {} {} {} {} {}",h.x,h.y,h.z,10,time,h.zone); //10 is now an interaction type driven by the infected feed
                 }
             })
@@ -808,9 +822,10 @@ impl host{
                     let eggtofaeces_contact_rules:bool = (EGGTOFAECES_CONTACT_SPREAD || !EGGTOFAECES_CONTACT_SPREAD && !(inf.motile ==  1 && x.motile == 2));
                     let faecestoegg_contact_rules:bool = (FAECESTOEGG_CONTACT_SPREAD || !FAECESTOEGG_CONTACT_SPREAD && !(inf.motile ==  2 && x.motile == 1));
                     let contact_rules:bool = hosttohost_contact_rules && hosttoegg_contact_rules && hosttofaeces_contact_rules && eggtohost_contact_rules && faecestohost_contact_rules && eggtofaeces_contact_rules && faecestoegg_contact_rules;
-                    if host::dist(inf, &x) && inf.zone == x.zone && segment_boundary_condition && contact_rules{
+                    if host::dist(inf, &x) && inf.zone == x.zone && segment_boundary_condition && contact_rules && !x.infected{ //do not allow for multiple infections to happen at the same time on one host
                         let before = x.infected.clone();
                         x.infected = x.transfer(1.0);
+                        if x.infected{x.number_of_times_infected+=1;}
                         if !before && x.infected {
                             if x.x != 0.0 && x.y != 0.0 {
                                 let mut diagnostic:i8 = 1;
@@ -1195,28 +1210,38 @@ fn test(parameters:[f64;8],fit_to:Vec<(usize,f64)>)->f64{
         // println!("{} {} {} {} {} {}",GRIDSIZE[zone][0],GRIDSIZE[zone][1],GRIDSIZE[zone][2],1000,0,zone);
         println!("{} {} {} {} {} {}",STEP[zone][0]+100000,STEP[zone][1]+100000,STEP[zone][2]+100000,GRIDSIZE[zone][0]+100000.0,GRIDSIZE[zone][1]+100000.0,GRIDSIZE[zone][2]+100000.0);  //Paramters for R file to extract and plot
     }          
-    counter
+    (counter/(fit_to.len() as f64).powf(0.5))
     // println!("{} {} {} {} {} {}",GRIDSIZE[0][0],GRIDSIZE[0][1],GRIDSIZE[0][2],0,0,0); //Last 5 lines are going to be zone config lines that need to be picked out in plotter.py
 }
 
-fn parameterize(ind:Vec<usize>,epoch:usize, rollover:usize,values_and_deltas:Vec<[f64;3]>,fit_to:Vec<(usize,f64)>)->Vec<f64>{
+
+
+
+
+fn parameterize(ind:Vec<usize>,epoch:usize, rollover:usize,values_and_deltas:Vec<[f64;3]>,fit_to:Vec<(usize,f64)>)->Vec<[f64;9]>{
     //The input vector of values and deltas is meant to consist ofslices strictly of size 3 that designate the range of the values that we want to change between, and the delta step with
     //which we wish to intiailly step
 
     //We will consider a deceleration and acceleration mechanic shortly
-
+    let mut output:Vec<[f64;9]> = Vec::new();
     //First consider that we only wish to allow one or more out of the 8 available variables to be changed.
     //Extract public values
     let mut ini:[f64;8] = [ADJUSTED_TIME_TO_COLONIZE[0],ADJUSTED_TIME_TO_COLONIZE[1],PROBABILITY_OF_HORIZONTAL_TRANSMISSION,RECOVERY_RATE[0],RECOVERY_RATE[1],LISTOFPROBABILITIES[0],FEED_INFECTION_RATE,HOST_0];
+    let mut prev_ini:[f64;8] = ini.clone();
     //Change out the values we wish to change with the average of the values presented inside rollover for the indices indicated by ind
     let mut tt:usize = 0;
     for ele in ind.clone(){
         ini[ele] = values_and_deltas[tt][0]+values_and_deltas[tt][1];
         ini[ele] /= 2.0;
     }
+    //MSE objective scores
     let mut MSE_previous:f64 = test(ini,fit_to.clone());
     let mut MSE:f64 = test(ini,fit_to.clone());
-
+    //MSE deltas
+    let mut delta:f64 =(MSE-MSE_previous).abs();
+    let mut delta_previous:f64 = 1.0;
+    let mut delta_ratio:f64 = delta/delta_previous;
+    let mut delta_ratio_previous:f64 = 1.0;
     let mut direction:bool = MSE<MSE_previous; // intial check if previous is less than
     let mut tt:usize = 0;
     for var_index in ind.clone(){
@@ -1225,42 +1250,110 @@ fn parameterize(ind:Vec<usize>,epoch:usize, rollover:usize,values_and_deltas:Vec
         let mut direction_polarity:f64 = 1.0;
         //Multiplier to maintain correct direction towards optimal solution
         for run in 0..epoch{
-            println!("Here is a sample test value {}", test(ini, fit_to.clone()));
+            // println!("Here is a sample test value {}", test(ini, fit_to.clone()));
             MSE_previous = MSE.clone();
             MSE = test(ini,fit_to.clone());
-            println!("MSE previous {} vs MSE {} at epoch {}", MSE_previous,MSE,run.clone());
+            delta_previous = delta.clone();
+            delta = MSE - MSE_previous; //if negative, we are approaching solution
+            delta_ratio_previous = delta_ratio.clone();
+            delta_ratio = (delta/delta_previous).abs();
+            println!("MSE previous {} vs MSE {} at epoch {} - fitted factor value is {}", MSE_previous,MSE,run.clone(),ini[var_index]);
+            let mut unit:[f64;9] = [0.0;9];
+            for thing in 0..ini.len(){
+                unit[thing]+=ini[thing];
+            }
+            unit[8] += MSE;
+            output.push(unit);
             if MSE<MSE_previous{
                 //in otherwords, if we are moving in the direction that we want... -> maintain polarity and just add delta at least
                 if direction{
-                    //and the prior iteration was ALSO in the right direction, we accelerate
-                    reward_counter+=1.0;
+                    //and the prior iteration was ALSO in the right direction,AND there has been an increase in the decrease in our discrepancy
+                    if delta_ratio>=1.0{reward_counter*=(1.0+ACCELERATION);}
+                    else{
+                        //decelerate
+                        if delta_ratio_previous>1.0{
+                            //ie first time having a deceleration in MSE decrease
+                            reward_counter = DECELERATION;
+                        }else{
+                            //Deceleration in MSE decrease has happened before -decelerate current value
+                            reward_counter*=DECELERATION;
+                        }
+                    }
                 }
-            }else if MSE == MSE_previous{
-                break;
-            }else{
-                reward_counter = 1.0;
-                direction_polarity *= -1.0;
+            }else if MSE == MSE_previous && ini[var_index]>=values_and_deltas[tt][0] && ini[var_index]<=values_and_deltas[tt][1]{
+                println!("We reached some potential minima... Investigating");
+            }else{// i.e. MSE has increased now!
+                if delta_previous<0.0{
+                    //Here, it means we were approaching solution previously!!
+                    //Reorientate to previous solution
+                    ini = prev_ini.clone();
+                    //
+                    reward_counter = DECELERATION*DECELERATION;
+                }else{
+                    reward_counter = 1.0;
+                    direction_polarity *= -1.0;
+                }
             }
             ini[var_index] += direction_polarity*reward_counter*values_and_deltas[tt][2];
+            ini[var_index] = limits::max(values_and_deltas[tt][0],ini[var_index]);
+            ini[var_index] = limits::min(values_and_deltas[tt][1],ini[var_index]);
         }
         tt+=1;
     }
-    let mut final_vector:Vec<f64> = Vec::new();
-    for i in ini{
-        final_vector.push(i);
-    }
-    final_vector.push(MSE);
-    final_vector
+    output
 }
 
 fn main(){
     //fn test(parameters:[f64;8],fit_to:Vec<(usize,f64)>)...
-
+    let ind:Vec<usize> = vec![5];
+    let epochs:usize = 100;
     //Changing parameter values 
     //parameters vector is to contain the following parameters in order : [ADJUSTED COLONIZATION TIME 0,ADJUSTED COLONIZATION TIME 1,Deposit probability (horizontal), recovery rate 0, recovery rate 1, probability of disease transmission (contact),feed infection probability ]
-    let parameters:[f64;8] = [ADJUSTED_TIME_TO_COLONIZE[0],ADJUSTED_TIME_TO_COLONIZE[1],PROBABILITY_OF_HORIZONTAL_TRANSMISSION,RECOVERY_RATE[0],RECOVERY_RATE[1],0.17,FEED_INFECTION_RATE,HOST_0];
-    let delta:Vec<f64> = parameterize(vec![6],20,1,vec![[0.1,0.95,0.05]],vec![(1,0.02),(15,0.86)]); //percentage values MUST be in percentage NOT actual <1 numbers -> reason: using MSE
+    let parameters:[f64;8] = [ADJUSTED_TIME_TO_COLONIZE[0],ADJUSTED_TIME_TO_COLONIZE[1],PROBABILITY_OF_HORIZONTAL_TRANSMISSION,RECOVERY_RATE[0],RECOVERY_RATE[1],LISTOFPROBABILITIES[0],FEED_INFECTION_RATE,HOST_0];
+    let delta:Vec<[f64;9]> = parameterize(ind.clone(),epochs,1,vec![[0.05,0.35,0.005]],vec![(40,33.3333),(15230,72.0)]); //percentage values MUST be in percentage NOT actual <1 numbers -> reason: using MSE
     println!("------------------------------------------------------------------------------------------");
-    println!("Optimized variable value is now operation is {} versus the original {}, with a final MSE score of {}",delta[6], (0.95+0.1)/2.0,delta[8]);
+    println!("Optimized variable value is now operation is {} versus the original {}, with a final MSE score of {}",delta[delta.len()-1][6], (0.95+0.1)/2.0,delta[delta.len()-1][8]);
+
+    // Extract the last value of each slice as the y-values
+    let y_values: Vec<f64> = delta.iter().map(|&slice| slice[8]).collect();
+    let hypertext:Vec<String> = delta.iter().map(|&slice| format!("Generation Time Gamma  shape:{} <br> Generation Time Gamma Rate:{} <br> Deposit Contamination Probability:{} <br> Recovery Rate Gamma Shape:{} <br> Recovery Rate Gamma Rate:{} <br> PROBABILITY OF INFECTION:{} <br> Feed Infection rate:{} <br> Number of infected Host 0s:{}",slice[0],slice[1],slice[2],slice[3],slice[4],slice[5],slice[6],slice[7])).collect();
+    let min_y = y_values.iter().cloned().fold(f64::INFINITY, f64::min);
+    let minimum_line:Vec<f64> = vec![min_y;delta.len()];
+    println!("min_y vector is {:?}",min_y);
+    // Create a scatterplot
+    let scatter = Scatter::new((0..delta.len()).collect(),y_values.clone())
+        .mode(Mode::Markers)
+        .marker(Marker::new().color(Rgba::new(255, 0, 0, 0.5)))
+        .text_array(hypertext.clone())
+        .name("Scatter Plot");
+
+    let mut plot = Plot::new();
+    plot.add_trace(scatter);
+
+    let trace1 = Scatter::new((0..delta.len()).collect(), minimum_line)
+    .mode(Mode::Lines)
+    .name("Minima")
+    .line(plotly::common::Line::new().color("purple").width(0.8 as f64).dash(plotly::common::DashType::LongDashDot));
+    plot.add_trace(trace1);
+    // Customize the layout
+    let layout = Layout::new().x_axis(Axis::new().title(Title::new("Epochs"))).y_axis(Axis::new().title(Title::new("MSE discrepancy"))).height(720).width(1440);
+    plot.set_layout(layout);
+
+    // Show the plot (generates an HTML file)
+    plot.show();
+
+    for ele in ind.clone(){
+        let x_values:Vec<f64> = delta.iter().map(|&slice| slice[ele]).collect();
+        let scatter = Scatter::new(x_values,y_values.clone())
+        .mode(Mode::Markers)
+        .marker(Marker::new().color(Rgba::new(255, 0, 0, 0.5)))
+        .text_array(hypertext.clone())
+        .name("Scatter Plot");
+        let mut plot2 = Plot::new();
+        plot2.add_trace(scatter);     
+        let layout = Layout::new().x_axis(Axis::new().title(Title::new(&(format!("Factor {}",ele))))).y_axis(Axis::new().title(Title::new("MSE discrepancy"))).height(720).width(1440);
+        plot2.set_layout(layout);
+        plot2.show();
+    }
 
 }
