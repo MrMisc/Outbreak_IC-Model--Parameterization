@@ -348,9 +348,12 @@ pub struct host{
 }
 //Note that if you want to adjust the number of zones, you have to, in addition to adjusting the individual values to your liking per zone, also need to change the slice types below!
 //Parameterization options
-const ACCELERATION:f64 = 0.8; //factor by which delta is decreased as we approach better fit value i.e. Bigger value -> More aggressive
-const DECELERATION:f64 = 0.2; //factor that represents the percentage value of a delta change we take as rate of objective function decrease (trending towards ideal solution - decreases)
-const PINPOINT:bool = true;
+const ACCELERATION:f64 = 0.1; //factor by which delta is decreased as we approach better fit value i.e. Bigger value -> More aggressive
+const DECELERATION:f64 = 0.1; //factor that represents the percentage value of a delta change we take as rate of objective function decrease (trending towards ideal solution - decreases)
+const PINPOINT:bool = false;
+const PERCENTILE_MONITOR:f64 = 0.02; // 10th percentile values of all tests
+const WEIGHT:f64 = 0.5; //percentage that this concert of best fit parameter estimates continue to influence the parameter estimate
+// const WEIGHT_INITIATION_POINT:usize = 5; //When do we weight for the percentile parameters?How many 
 //I.e. Smaller figure -> More punishing
 //Resolution
 const STEP:[[usize;3];1] = [[100,30,5]];  //Unit distance of segments ->Could be used to make homogeneous zoning (Might not be very flexible a modelling decision)
@@ -1224,7 +1227,7 @@ fn parameterize(ind:Vec<usize>,epoch:usize, rollover:usize,values_and_deltas:Vec
     //which we wish to intiailly step
 
     //We will consider a deceleration and acceleration mechanic shortly
-    let mut output:Vec<[f64;9]> = Vec::new();
+    let mut output:Vec<[f64;9]> = Vec::new(); //All parameter/factor values, terminating with the associated MSE value
     //First consider that we only wish to allow one or more out of the 8 available variables to be changed.
     //Extract public values
     let mut ini:[f64;8] = [ADJUSTED_TIME_TO_COLONIZE[0],ADJUSTED_TIME_TO_COLONIZE[1],PROBABILITY_OF_HORIZONTAL_TRANSMISSION,RECOVERY_RATE[0],RECOVERY_RATE[1],LISTOFPROBABILITIES[0],FEED_INFECTION_RATE,HOST_0];
@@ -1233,6 +1236,7 @@ fn parameterize(ind:Vec<usize>,epoch:usize, rollover:usize,values_and_deltas:Vec
     for ele in ind.clone(){
         ini[ele] = values_and_deltas[tt][0]+values_and_deltas[tt][1];
         ini[ele] /= 2.0;
+        tt+=1;
     }
     let mut prev_ini:[f64;8] = ini.clone();
     //MSE objective scores
@@ -1245,13 +1249,18 @@ fn parameterize(ind:Vec<usize>,epoch:usize, rollover:usize,values_and_deltas:Vec
     let mut delta_ratio:f64 = delta/delta_previous;
     let mut delta_ratio_previous:f64 = 1.0;
     let mut direction:bool = MSE<MSE_previous; // intial check if previous is less than
-    let mut tt:usize = 0;
-    for var_index in ind.clone(){
+    
+    //Weighing down algorithm
+    let mut are_we_close:bool = false;
+    for run in 0..epoch{
+        let mut anchors:Vec<[f64;9]> = Vec::new();
         //How many times have you approached/diverged from the goal?
         let mut reward_counter:f64 = 1.0;
         let mut direction_polarity:f64 = 1.0;
+        let mut tt:usize = 0;
         //Multiplier to maintain correct direction towards optimal solution
-        for run in 0..epoch{
+        for var_index in ind.clone(){
+            println!("Variables {:?}",ini.clone());
             // println!("Here is a sample test value {}", test(ini, fit_to.clone()));
             MSE_previous = MSE.clone();
             MSE = test(ini,fit_to.clone());
@@ -1268,24 +1277,23 @@ fn parameterize(ind:Vec<usize>,epoch:usize, rollover:usize,values_and_deltas:Vec
             output.push(unit);
             if MSE<1.0 && PINPOINT{break;}
             if MSE<MSE_previous{
+                prev_ini = ini.clone();
                 //in otherwords, if we are moving in the direction that we want... -> maintain polarity and just add delta at least
                 if direction{
                     //and the prior iteration was ALSO in the right direction,AND there has been an increase in the decrease in our discrepancy
                     if delta_ratio>=1.0{reward_counter*=(1.0+ACCELERATION);}
                     else{
                         //decelerate
-                        if delta_ratio_previous>1.0{
-                            //ie first time having a deceleration in MSE decrease
-                            reward_counter = DECELERATION;
-                        }else{
-                            //Deceleration in MSE decrease has happened before -decelerate current value
-                            reward_counter*=DECELERATION;
-                        }
+                        reward_counter *= DECELERATION;
                     }
                 }
                 if MSE/MSE_0<0.05{
-                    reward_counter = limits::min(reward_counter,MSE/MSE_0);
+                    reward_counter *= MSE/MSE_0;
                 }
+                // if MSE/MSE_0<PERCENTILE_MONITOR{
+                //     if !are_we_close{are_we_close = true;}
+                //     anchors.push([ini[var_index],ini[ini.len()-1]]);
+                // }
             }else if MSE == MSE_previous && ini[var_index]>=values_and_deltas[tt][0] && ini[var_index]<=values_and_deltas[tt][1]{
                 println!("We reached some potential minima... Investigating");
                 direction_polarity*=-1.0;
@@ -1296,21 +1304,61 @@ fn parameterize(ind:Vec<usize>,epoch:usize, rollover:usize,values_and_deltas:Vec
                     //Reorientate to previous solution
                     ini = prev_ini.clone();
                     //
-                    reward_counter = DECELERATION*DECELERATION;
+                    reward_counter = limits::min(DECELERATION*DECELERATION,MSE/MSE_0);
                 }else{
-                    reward_counter = 1.0;
+                    reward_counter = limits::max(1.0+ACCELERATION,MSE/MSE_0);
                     direction_polarity *= -1.0;
                 }
             }
-            prev_ini = ini.clone();
+            if direction_polarity>0.0 && ini[var_index]==values_and_deltas[tt][1] || direction_polarity<0.0 && ini[var_index] == values_and_deltas[tt][0]{
+                direction_polarity*=-1.0;
+            }
             ini[var_index] += direction_polarity*reward_counter*values_and_deltas[tt][2];
             ini[var_index] = limits::max(values_and_deltas[tt][0],ini[var_index]);
             ini[var_index] = limits::min(values_and_deltas[tt][1],ini[var_index]);
-            direction = MSE<MSE_previous;
+            //Weight
+            if output.len()>5{
+                // anchors:Vec<[f64;9]> = output.clone().sort_by(|a,b| a[8].partial_cmp(&b[8]).unwrap());
+                // anchors = anchors.truncate((PERCENTILE_MONITOR*output.len() as f64) as usize);
+                let percentile = calculate_percentile(&output,PERCENTILE_MONITOR);
+                anchors = output.clone().into_iter().filter(|x| x[output[0].len()-1]<=limits::min(percentile,MSE)).collect();
+                // anchors.retain(|x| x[8] < percentile);
+                println!("Percentile value is {}",percentile);
+                println!("Anchors vector is {:?}",anchors.clone());
+                if anchors.len()>1 && run>epoch.clone()/2{
+                    // ini[var_index] *= (1.0-WEIGHT);
+                    let sum__:f64 = anchors.iter().map(|s| s[var_index]).sum();
+                    ini[var_index] += WEIGHT*sum__/(anchors.len() as f64);   
+                    ini[var_index] /= (1.0+WEIGHT);         
+                }
+            }
+            direction = MSE<MSE_previous && delta_previous>= 0.0;
+            tt+=1;
         }
-        tt+=1;
     }
+    let perc:f64 = calculate_percentile(&output,PERCENTILE_MONITOR);
+    let mut anchors:Vec<[f64;9]> = output.clone().into_iter().filter(|x| x[output[0].len()-1]<=perc).collect();
+
+    for index in ind{
+        let mut min_max_first: (f64, f64) = (f64::MAX, f64::MIN);
+        for slice in &anchors {
+            // Calculate min and max for the first element (index 0) of each slice
+            let first_element:f64 = slice[index];
+            min_max_first.0 = min_max_first.0.min(first_element);
+            min_max_first.1 = min_max_first.1.max(first_element);
+        }    
+        println!("Range of Factor {} for {} percentile values is {:?}", index,PERCENTILE_MONITOR,min_max_first);
+    }
+
+
     output
+}
+
+fn calculate_percentile(data: &Vec<[f64; 9]>, percentile: f64) -> f64 {
+    let mut sorted_data = data.clone();
+    sorted_data.sort_by(|a, b| a[8].partial_cmp(&b[8]).unwrap());
+    let index = (percentile* (sorted_data.len() as f64 - 1.0)) as usize;
+    sorted_data[index][8]
 }
 
 fn main(){
@@ -1320,9 +1368,9 @@ fn main(){
     //Changing parameter values 
     //parameters vector is to contain the following parameters in order : [ADJUSTED COLONIZATION TIME 0,ADJUSTED COLONIZATION TIME 1,Deposit probability (horizontal), recovery rate 0, recovery rate 1, probability of disease transmission (contact),feed infection probability ]
     let parameters:[f64;8] = [ADJUSTED_TIME_TO_COLONIZE[0],ADJUSTED_TIME_TO_COLONIZE[1],PROBABILITY_OF_HORIZONTAL_TRANSMISSION,RECOVERY_RATE[0],RECOVERY_RATE[1],LISTOFPROBABILITIES[0],FEED_INFECTION_RATE,HOST_0];
-    let delta:Vec<[f64;9]> = parameterize(ind.clone(),epochs,1,vec![[0.1,0.5,0.05]],vec![(40,33.3333),(230,72.0)]); //percentage values MUST be in percentage NOT actual <1 numbers -> reason: using MSE
+    let delta:Vec<[f64;9]> = parameterize(ind.clone(),epochs,1,vec![[0.1,1.0,0.1]],vec![(40,33.3333),(230,72.0)]); //percentage values MUST be in percentage NOT actual <1 numbers -> reason: using MSE
     println!("------------------------------------------------------------------------------------------");
-    println!("Optimized variable value is now operation is {} versus the original {}, with a final MSE score of {}",delta[delta.len()-1][6], (0.95+0.1)/2.0,delta[delta.len()-1][8]);
+    // println!("Optimized variable value is now operation is {} versus the original {}, with a final MSE score of {}",delta[delta.len()-1][6], (0.95+0.1)/2.0,delta[delta.len()-1][8]);
 
     // Extract the last value of each slice as the y-values
     let y_values: Vec<f64> = delta.iter().map(|&slice| slice[8]).collect();
@@ -1339,7 +1387,7 @@ fn main(){
         .name("Scatter Plot");
     let scatter_addon = Scatter::new((0..delta.len()).collect(),y_values.clone())
         .mode(Mode::Markers)
-        .marker(Marker::new().color(Rgba::new(0, 118, 97, 1.0)))
+        .marker(Marker::new().color(Rgba::new(0, 118, 97, 0.7)))
         .text_array(hypertext.clone())
         .name("Scatter Plot");        
 
@@ -1353,24 +1401,28 @@ fn main(){
     .line(plotly::common::Line::new().color("purple").width(0.8 as f64).dash(plotly::common::DashType::LongDashDot));
     plot.add_trace(trace1);
     // Customize the layout
-    let layout = Layout::new().x_axis(Axis::new().title(Title::new("Epochs"))).y_axis(Axis::new().title(Title::new("MSE discrepancy"))).height(720).width(1440).plot_background_color(Rgba::new(255,246,235,0.7)).paper_background_color(Rgba::new(255,246,235,0.8));
+    let layout = Layout::new().x_axis(Axis::new().title(Title::new("Epochs"))).y_axis(Axis::new().title(Title::new("MSE discrepancy"))).height(900).width(1900).plot_background_color(Rgba::new(255,246,235,0.7)).paper_background_color(Rgba::new(255,246,235,0.8));
     plot.set_layout(layout);
 
     // Show the plot (generates an HTML file)
     plot.show();
+    plot.write_html("Epoch_Plot.html");
 
     for ele in ind.clone(){
         let x_values:Vec<f64> = delta.iter().map(|&slice| slice[ele]).collect();
         let scatter = Scatter::new(x_values,y_values.clone())
         .mode(Mode::Markers)
-        .marker(Marker::new().color(Rgba::new(255, 0, 0, 0.5)))
+        .marker(Marker::new().color(Rgba::new(0, 91, 75, 0.35)))
         .text_array(hypertext.clone())
         .name("Scatter Plot");
         let mut plot2 = Plot::new();
         plot2.add_trace(scatter);     
-        let layout = Layout::new().x_axis(Axis::new().title(Title::new(&(format!("Factor {}",ele))))).y_axis(Axis::new().title(Title::new("MSE discrepancy"))).height(720).width(1440).plot_background_color(Rgba::new(255,246,235,0.7)).paper_background_color(Rgba::new(255,246,235,0.8));
+        let layout = Layout::new().x_axis(Axis::new().title(Title::new(&(format!("Factor {}",ele))))).y_axis(Axis::new().title(Title::new("MSE discrepancy"))).height(900).width(1900).plot_background_color(Rgba::new(255,246,235,0.7)).paper_background_color(Rgba::new(255,246,235,0.8));
         plot2.set_layout(layout);
         plot2.show();
+        plot2.write_html(format!("Factor_{}.html",ele));
     }
+
+
 
 }
