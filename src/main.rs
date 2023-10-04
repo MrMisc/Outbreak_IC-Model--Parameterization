@@ -356,9 +356,9 @@ const WEIGHT:f64 = 0.5; //percentage that this concert of best fit parameter est
 // const WEIGHT_INITIATION_POINT:usize = 5; //When do we weight for the percentile parameters?How many 
 //I.e. Smaller figure -> More punishing
 //Resolution
-const STEP:[[usize;3];1] = [[100,30,5]];  //Unit distance of segments ->Could be used to make homogeneous zoning (Might not be very flexible a modelling decision)
+const STEP:[[usize;3];1] = [[300,300,2]];  //Unit distance of segments ->Could be used to make homogeneous zoning (Might not be very flexible a modelling decision)
 const HOUR_STEP: f64 = 4.0; //Number of times hosts move per hour
-const LENGTH: usize =20*24; //How long do you want the simulation to be?
+const LENGTH: usize =15*24; //How long do you want the simulation to be?
 //Infection/Colonization module
 // ------------Do only colonized hosts spread disease or do infected hosts spread
 const HOST_0:f64 = 3.0;
@@ -387,14 +387,14 @@ const FAECESTOEGG_CONTACT_SPREAD:bool = true;
 // const INITIAL_COLONIZATION_RATE:f64 = 0.47; //Probability of infection, resulting in colonization -> DAILY RATE ie PER DAY
 //Space
 const LISTOFPROBABILITIES:[f64;1] = [0.17]; //Probability of transfer of samonella per zone - starting from zone 0 onwards
-const GRIDSIZE:[[f64;3];1] = [[100.0,30.0,5.0]];
+const GRIDSIZE:[[f64;3];1] = [[300.0,300.0,2.0]];
 const MAX_MOVE:f64 = 12.5;
 const MEAN_MOVE:f64 = 2.0;
 const STD_MOVE:f64 = 3.0; // separate movements for Z config
 const MAX_MOVE_Z:f64 = 1.0;
 const MEAN_MOVE_Z:f64 = 2.0;
 const STD_MOVE_Z:f64 = 4.0;
-const NO_OF_HOSTS_PER_SEGMENT:[u64;1] = [20];
+const NO_OF_HOSTS_PER_SEGMENT:[u64;1] = [300];
 //Space --- Segment ID
 const TRANSFERS_ONLY_WITHIN:[bool;1] = [false]; //Boolean that informs simulation to only allow transmissions to occur WITHIN segments, not between adjacent segments
 //Fly option
@@ -1363,12 +1363,12 @@ fn calculate_percentile(data: &Vec<[f64; 9]>, percentile: f64) -> f64 {
 
 fn main(){
     //fn test(parameters:[f64;8],fit_to:Vec<(usize,f64)>)...
-    let ind:Vec<usize> = vec![5];
+    let ind:Vec<usize> = vec![7];
     let epochs:usize = 100;
     //Changing parameter values 
     //parameters vector is to contain the following parameters in order : [ADJUSTED COLONIZATION TIME 0,ADJUSTED COLONIZATION TIME 1,Deposit probability (horizontal), recovery rate 0, recovery rate 1, probability of disease transmission (contact),feed infection probability ]
     let parameters:[f64;8] = [ADJUSTED_TIME_TO_COLONIZE[0],ADJUSTED_TIME_TO_COLONIZE[1],PROBABILITY_OF_HORIZONTAL_TRANSMISSION,RECOVERY_RATE[0],RECOVERY_RATE[1],LISTOFPROBABILITIES[0],FEED_INFECTION_RATE,HOST_0];
-    let delta:Vec<[f64;9]> = parameterize(ind.clone(),epochs,1,vec![[0.1,1.0,0.1]],vec![(40,33.3333),(230,72.0)]); //percentage values MUST be in percentage NOT actual <1 numbers -> reason: using MSE
+    let delta:Vec<[f64;9]> = parameterize(ind.clone(),epochs,1,vec![[1.0,40.0,1.0]],vec![(10,6.9767),(100,16.6113),(275,41.19601)]); //percentage values MUST be in percentage NOT actual <1 numbers -> reason: using MSE
     println!("------------------------------------------------------------------------------------------");
     // println!("Optimized variable value is now operation is {} versus the original {}, with a final MSE score of {}",delta[delta.len()-1][6], (0.95+0.1)/2.0,delta[delta.len()-1][8]);
 
