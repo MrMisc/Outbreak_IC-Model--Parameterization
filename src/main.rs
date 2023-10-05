@@ -1118,7 +1118,7 @@ fn test(parameters:[f64;8],fit_to:Vec<(usize,f64)>)->f64{
             }
         } //Say chickens move/don't move every 15min - 4 times per hour
         host::recover(&mut chickens,parameters[3],parameters[4]);
-        chickens = host::deposit_all(chickens, parameters[5]);
+        chickens = host::deposit_all(chickens, parameters[2]);
         //Collect the hosts and deposits as according
         // println!("Number of infected eggs in soon to be collection is {}",collect.clone().into_iter().filter(|x| x.motile == 1 && x.infected).collect::<Vec<_>>().len() as f64);
         // feast.append(&mut collect);
