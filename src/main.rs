@@ -402,6 +402,7 @@ const FLY:bool = false;
 const FLY_FREQ:u8 = 3; //At which Hour step do the  
 //Disease 
 const TRANSFER_DISTANCE: f64 = 1.3;//maximum distance over which hosts can trasmit diseases to one another
+const SIZE_FACTOR_FOR_EGGS:f64 = 0.15; //eggs are significantly smaller than their original chickens, so it stands to reason that their transfer distance for contact spread should be smaller
 //Host parameters
 const PROBABILITY_OF_INFECTION:f64 = 0.12; //probability of imported host being infected
 const MEAN_AGE:f64 = 5.0*24.0; //Mean age of hosts imported (IN HOURS)
@@ -460,7 +461,7 @@ const PROBABILITY_OF_FAECAL_DROP:f64 = 0.3;
 impl host{
     fn recover(mut vector:&mut Vec<host>,rec0:f64,rec1:f64){
         vector.iter_mut().for_each(|mut x| {
-            if x.infected{
+            if x.infected && x.motile == 0{
                 let grad:f64 = (rec1-rec0)/(MAX_AGE - MIN_AGE);
                 let prob:f64 = rec0+(x.age-MIN_AGE) * grad;
                 if roll(prob){
@@ -612,9 +613,9 @@ impl host{
             inf = self.infected;
         }else if self.colonized{
             inf = true;
-        }else if self.infected && self.time_infected<FECAL_SHEDDING_PERIOD && self.motile == 2{
+        }else if self.infected && self.time_infected<FECAL_SHEDDING_PERIOD && !consumable{
             inf = true;
-        }else if self.infected && self.motile == 1{
+        }else if self.infected && consumable{
             inf = roll(prob);
         }
         let range_y = self.range_y.clone();
@@ -762,7 +763,18 @@ impl host{
         //     println!("{} {} vs {} {}",&host1.x,&host1.y,&host2.x,&host2.y);
         // }
         ////
-        t.powf(0.5)<=TRANSFER_DISTANCE && host1.zone == host2.zone
+        let mut transfer_distance:f64 = TRANSFER_DISTANCE;
+        if host1.motile==2{
+            if host2.motile ==2{
+                transfer_distance *= SIZE_FACTOR_FOR_EGGS;
+                // if t.powf(0.5)<transfer_distance{println!("Egg to egg infection! @ {:?} vs {:?}, with infection status:{} vs {} respectively",[host1.x,host1.y,host1.z],[host2.x,host2.y,host2.z],host1.infected,host2.infected);}
+            }else{
+                transfer_distance = TRANSFER_DISTANCE/2.0 + TRANSFER_DISTANCE*SIZE_FACTOR_FOR_EGGS;
+            }
+        }else if host2.motile == 2{
+            transfer_distance = TRANSFER_DISTANCE/2.0 + TRANSFER_DISTANCE*SIZE_FACTOR_FOR_EGGS;
+        }
+        t.powf(0.5)<=transfer_distance && host1.zone == host2.zone
     }
     // fn transmit(mut inventory:Vec<host>,time:usize)->Vec<host>{//Current version logic: Once the diseased host passes the "test" in fn transfer, then ALL other hosts within distance contract
     //     //Locate all infected hosts
