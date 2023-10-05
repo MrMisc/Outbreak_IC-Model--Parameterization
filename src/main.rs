@@ -356,9 +356,9 @@ const WEIGHT:f64 = 0.5; //percentage that this concert of best fit parameter est
 // const WEIGHT_INITIATION_POINT:usize = 5; //When do we weight for the percentile parameters?How many 
 //I.e. Smaller figure -> More punishing
 //Resolution
-const STEP:[[usize;3];1] = [[300,300,2]];  //Unit distance of segments ->Could be used to make homogeneous zoning (Might not be very flexible a modelling decision)
+const STEP:[[usize;3];1] = [[4,4,2]];  //Unit distance of segments ->Could be used to make homogeneous zoning (Might not be very flexible a modelling decision)
 const HOUR_STEP: f64 = 4.0; //Number of times hosts move per hour
-const LENGTH: usize =15*24; //How long do you want the simulation to be?
+const LENGTH: usize =10; //How long do you want the simulation to be?
 //Infection/Colonization module
 // ------------Do only colonized hosts spread disease or do infected hosts spread
 const HOST_0:f64 = 3.0;
@@ -387,14 +387,14 @@ const FAECESTOEGG_CONTACT_SPREAD:bool = true;
 // const INITIAL_COLONIZATION_RATE:f64 = 0.47; //Probability of infection, resulting in colonization -> DAILY RATE ie PER DAY
 //Space
 const LISTOFPROBABILITIES:[f64;1] = [0.17]; //Probability of transfer of samonella per zone - starting from zone 0 onwards
-const GRIDSIZE:[[f64;3];1] = [[300.0,300.0,2.0]];
-const MAX_MOVE:f64 = 12.5;
-const MEAN_MOVE:f64 = 2.0;
-const STD_MOVE:f64 = 3.0; // separate movements for Z config
+const GRIDSIZE:[[f64;3];1] = [[40.0,16.0,16.0]];
+const MAX_MOVE:f64 = 2.5;
+const MEAN_MOVE:f64 = 0.5;
+const STD_MOVE:f64 = 1.0; // separate movements for Z config
 const MAX_MOVE_Z:f64 = 1.0;
 const MEAN_MOVE_Z:f64 = 2.0;
 const STD_MOVE_Z:f64 = 4.0;
-const NO_OF_HOSTS_PER_SEGMENT:[u64;1] = [300];
+const NO_OF_HOSTS_PER_SEGMENT:[u64;1] = [10];
 //Space --- Segment ID
 const TRANSFERS_ONLY_WITHIN:[bool;1] = [false]; //Boolean that informs simulation to only allow transmissions to occur WITHIN segments, not between adjacent segments
 //Fly option
@@ -411,7 +411,7 @@ const MAX_AGE:f64 = 11.0*24.0; //Maximum age of host accepted (Note: as of now, 
 const DEFECATION_RATE:f64 = 6.0; //Number times a day host is expected to defecate
 const MIN_AGE:f64 = 1.0*24.0;
 
-const DEPOSIT:bool = true;
+const DEPOSIT:bool = false;
 const DEPOSIT_RATE:f64 = 1.0; //Number of times a day host is expected to deposit a consumable deposit
 //
 
@@ -436,7 +436,7 @@ const MISHAP_RADIUS:f64 = 9.0; //Must be larger than the range_x of the eviscera
 const ages:[f64;1] = [800.0*24.0]; //Time hosts are expected spend in each region minimally
 //Collection
 const AGE_OF_HOSTCOLLECTION: f64 = 20.0*24.0;  //For instance if you were collecting chickens every 15 days
-const COLLECT_DEPOSITS: bool = true;
+const COLLECT_DEPOSITS: bool = false;
 const AGE_OF_DEPOSITCOLLECTION:f64 = 1.0*24.0; //If you were collecting their eggs every 3 days
 const FAECAL_CLEANUP_FREQUENCY:usize = 2; //How many times a day do you want faecal matter to be cleaned up?
 //or do we do time collection instead?
@@ -446,13 +446,13 @@ const INFLUX:bool = false;
 const PERIOD_OF_INFLUX:u8 = 24; //How many hours before new batch of hosts are imported?
 const PERIOD_OF_TRANSPORT:u8 = 1; //Prompt to transport chickens between zones every hour (checking that they fulfill ages requirement of course)
 //Restriction?
-const RESTRICTION:bool = false;
+const RESTRICTION:bool = true;
 //Generation Parameters
 const SPORADICITY:f64 = 4.0; //How many fractions of the dimension of the cage/segment do you want the hosts to start at? Bigger number makes the spread of hosts starting point more even per seg
 
 
 //Additional 3D parameters
-const FAECAL_DROP:bool = false; //Does faeces potentially drop in terms of depth?
+const FAECAL_DROP:bool = true; //Does faeces potentially drop in terms of depth?
 const PROBABILITY_OF_FAECAL_DROP:f64 = 0.3;
 
 
@@ -1275,7 +1275,13 @@ fn parameterize(ind:Vec<usize>,epoch:usize, rollover:usize,values_and_deltas:Vec
             println!("Variables {:?}",ini.clone());
             // println!("Here is a sample test value {}", test(ini, fit_to.clone()));
             MSE_previous = MSE.clone();
+            let mut ini2:[f64;8] = ini.clone();
+            ini2[var_index] = values_and_deltas[tt][1] - ini2[var_index];
             MSE = test(ini,fit_to.clone());
+            //Mirror test
+            if run%(epoch.clone()/10)==0{
+                if test(ini2,fit_to.clone()) <MSE{ini[var_index] = ini2[var_index];}
+            }
             delta_previous = delta.clone();
             delta = MSE - MSE_previous; //if negative, we are approaching solution -> we do not need to consider abs() here because MSE is innately positive
             delta_ratio_previous = delta_ratio.clone();
@@ -1375,12 +1381,12 @@ fn calculate_percentile(data: &Vec<[f64; 9]>, percentile: f64) -> f64 {
 
 fn main(){
     //fn test(parameters:[f64;8],fit_to:Vec<(usize,f64)>)...
-    let ind:Vec<usize> = vec![7];
-    let epochs:usize = 100;
+    let ind:Vec<usize> = vec![5,7];
+    let epochs:usize = 10000;
     //Changing parameter values 
     //parameters vector is to contain the following parameters in order : [ADJUSTED COLONIZATION TIME 0,ADJUSTED COLONIZATION TIME 1,Deposit probability (horizontal), recovery rate 0, recovery rate 1, probability of disease transmission (contact),feed infection probability ]
     let parameters:[f64;8] = [ADJUSTED_TIME_TO_COLONIZE[0],ADJUSTED_TIME_TO_COLONIZE[1],PROBABILITY_OF_HORIZONTAL_TRANSMISSION,RECOVERY_RATE[0],RECOVERY_RATE[1],LISTOFPROBABILITIES[0],FEED_INFECTION_RATE,HOST_0];
-    let delta:Vec<[f64;9]> = parameterize(ind.clone(),epochs,1,vec![[1.0,40.0,1.0]],vec![(10,6.9767),(100,16.6113),(275,41.19601)]); //percentage values MUST be in percentage NOT actual <1 numbers -> reason: using MSE
+    let delta:Vec<[f64;9]> = parameterize(ind.clone(),epochs,1,vec![[0.001,0.1,0.001],[1.0,40.0,1.0]],vec![(9,1.35)]); //percentage values MUST be in percentage NOT actual <1 numbers -> reason: using MSE
     println!("------------------------------------------------------------------------------------------");
     // println!("Optimized variable value is now operation is {} versus the original {}, with a final MSE score of {}",delta[delta.len()-1][6], (0.95+0.1)/2.0,delta[delta.len()-1][8]);
 
@@ -1413,7 +1419,7 @@ fn main(){
     .line(plotly::common::Line::new().color("purple").width(0.8 as f64).dash(plotly::common::DashType::LongDashDot));
     plot.add_trace(trace1);
     // Customize the layout
-    let layout = Layout::new().x_axis(Axis::new().title(Title::new("Epochs"))).y_axis(Axis::new().title(Title::new("MSE discrepancy"))).height(900).width(1900).plot_background_color(Rgba::new(255,246,235,0.7)).paper_background_color(Rgba::new(255,246,235,0.8));
+    let layout = Layout::new().x_axis(Axis::new().title(Title::new("Epochs"))).y_axis(Axis::new().title(Title::new("MSE discrepancy"))).height(860).width(1860).plot_background_color(Rgba::new(255,246,235,0.7)).paper_background_color(Rgba::new(255,246,235,0.8));
     plot.set_layout(layout);
 
     // Show the plot (generates an HTML file)
@@ -1429,10 +1435,32 @@ fn main(){
         .name("Scatter Plot");
         let mut plot2 = Plot::new();
         plot2.add_trace(scatter);     
-        let layout = Layout::new().x_axis(Axis::new().title(Title::new(&(format!("Factor {}",ele))))).y_axis(Axis::new().title(Title::new("MSE discrepancy"))).height(900).width(1900).plot_background_color(Rgba::new(255,246,235,0.7)).paper_background_color(Rgba::new(255,246,235,0.8));
+        let layout = Layout::new().x_axis(Axis::new().title(Title::new(&(format!("Factor {}",ele))))).y_axis(Axis::new().title(Title::new("MSE discrepancy"))).height(860).width(1860).plot_background_color(Rgba::new(255,246,235,0.7)).paper_background_color(Rgba::new(255,246,235,0.8));
         plot2.set_layout(layout);
         plot2.show();
         plot2.write_html(format!("Factor_{}.html",ele));
+    }
+
+    if ind.len()>=2{
+        let filestring: String = format!("./output.csv");
+        if fs::metadata(&filestring).is_ok() {
+            fs::remove_file(&filestring).unwrap();
+        }
+        // Open the file in append mode for writing
+        let mut file = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .append(true) // Open in append mode
+        .open(&filestring)
+        .unwrap();
+        let mut wtr = Writer::from_writer(file);
+        for row in delta.iter() {
+            // Convert the f64 values to strings
+            let row_as_strings: Vec<String> = row.iter().map(|&f| f.to_string()).collect();
+            wtr.write_record(&row_as_strings).unwrap();
+        }
+        wtr.flush().unwrap();
+
     }
 
 
