@@ -143,6 +143,21 @@ pub struct Segment_3D{
     eviscerated:bool
 }
 
+impl Segment_3D{
+    fn generate(mut self,infected:bool,colonized:bool,n:u32,atc0:f64, atc1:f64,probability:f64,mut hosts:&mut Vec<host>){
+        //fn new(zone:usize, std:f64,loc_x:f64, loc_y:f64,loc_z:f64,restriction:bool,range_x:u64,range_y:u64,range_z:u64, atc0:f64, atc1:f64,probability:f64)->host{
+        if n<self.capacity{
+            self.capacity-=n;
+        }
+        if !infected{hosts.push(host::new(self.zone,0.0,self.origin_x as f64,self.origin_y as f64,self.origin_z as f64,RESTRICTION,self.range_x,self.range_y,self.range_z,atc0,atc1,probability));}
+        else{
+            let mut host_to_add:host = host::new_inf(self.zone,0.0,self.origin_x as f64,self.origin_y as f64,self.origin_z as f64,RESTRICTION,self.range_x,self.range_y,self.range_z,atc0,atc1,probability);
+            host_to_add.colonized = colonized;
+            hosts.push(host_to_add);
+        }
+    }
+}
+
 pub struct Eviscerator{
     zone:usize,
     infected: bool,
