@@ -493,7 +493,7 @@ const PROBABILITY_OF_FAECAL_DROP:f64 = 0.3;
 impl host{
     fn recover(mut vector:&mut Vec<host>,rec0:f64,rec1:f64){
         vector.iter_mut().for_each(|mut x| {
-            if x.infected && x.motile == 0{
+            if x.infected && x.motile == 0 && !x.colonized{
                 let grad:f64 = (rec1-rec0)/(MAX_AGE - MIN_AGE);
                 let prob:f64 = rec0+(x.age-MIN_AGE) * grad;
                 if roll(prob){
@@ -1440,7 +1440,7 @@ fn main(){
     //parameters vector is to contain the following parameters in order : [ADJUSTED COLONIZATION TIME 0,ADJUSTED COLONIZATION TIME 1,Deposit probability (horizontal), recovery rate 0, recovery rate 1, probability of disease transmission (contact),feed infection probability ]
     let parameters:[f64;8] = [ADJUSTED_TIME_TO_COLONIZE[0],ADJUSTED_TIME_TO_COLONIZE[1],PROBABILITY_OF_HORIZONTAL_TRANSMISSION,RECOVERY_RATE[0],RECOVERY_RATE[1],LISTOFPROBABILITIES[0],FEED_INFECTION_RATE,HOST_0];
     // let delta:Vec<[f64;9]> = parameterize(ind.clone(),epochs,1,vec![[0.1,0.9,0.1]],vec![(168,50.0),(336,48.9),(504,42.5),(672,52.5),(840,60.0),(1008,70.0),(1176,70.0),(1344,70.0)]); //percentage values MUST be in percentage NOT actual <1 numbers -> reason: using MSE
-    let delta:Vec<[f64;9]> = parameterize(ind.clone(),epochs,1,vec![[0.1,0.9,0.1]],vec![(168,17.5),(336,35.0),(504,45.0),(672,55.0),(840,62.5),(1008,72.5),(1176,72.5),(1344,72.5)]); //percentage values MUST be in percentage NOT actual <1 numbers -> reason: using MSE
+    let delta:Vec<[f64;9]> = parameterize(ind.clone(),epochs,1,vec![[0.01,0.75,0.075]],vec![(168,17.5),(336,35.0),(504,45.0),(672,55.0),(840,62.5),(1008,72.5),(1176,72.5),(1344,72.5)]); //percentage values MUST be in percentage NOT actual <1 numbers -> reason: using MSE
     println!("------------------------------------------------------------------------------------------");
     // println!("Optimized variable value is now operation is {} versus the original {}, with a final MSE score of {}",delta[delta.len()-1][6], (0.95+0.1)/2.0,delta[delta.len()-1][8]);
 
