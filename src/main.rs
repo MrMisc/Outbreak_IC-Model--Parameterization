@@ -378,7 +378,7 @@ pub struct host{
 }
 //Note that if you want to adjust the number of zones, you have to, in addition to adjusting the individual values to your liking per zone, also need to change the slice types below!
 //Parameterization options
-const ACCELERATION:f64 = 0.1; //factor by which delta is decreased as we approach better fit value i.e. Bigger value -> More aggressive
+const ACCELERATION:f64 = 0.4; //factor by which delta is decreased as we approach better fit value i.e. Bigger value -> More aggressive
 const DECELERATION:f64 = 0.1; //factor that represents the percentage value of a delta change we take as rate of objective function decrease (trending towards ideal solution - decreases)
 const PINPOINT:bool = false;
 const PERCENTILE_MONITOR:f64 = 0.02; // 10th percentile values of all tests
@@ -398,11 +398,12 @@ const TIME_OR_CONTACT:bool = true; //true for time -> contact uses number of tim
 const TIME_TO_COLONIZE:[f64;2] = [5.0*24.0, 11.6*24.0]; //95% CI for generation time
 const COLONIZE_TIME_MAX_OVERRIDE:f64 = 26.0*24.0;
 //If you want to use a gamma distribution
-const ADJUSTED_TIME_TO_COLONIZE:[f64;2] = [4.0,1.0/2.0];  //In days, unlike hours. This is converted to hours within code
+const ADJUSTED_TIME_TO_COLONIZE:[f64;2] = [4.5,1.0/2.0];  //In days, unlike hours. This is converted to hours within code
 const PROBABILITY_OF_HORIZONTAL_TRANSMISSION:f64 = 0.05; //Chance of infected, but not yet colonized host, infecting their own deposits-> eggs
 // const RATE_OF_COLONIZATION_DECAY: f64 = 0.17;
 const FECAL_SHEDDING_PERIOD:f64 = 19.77*24.0;//Period in of which faeces from infected hosts will be infected, after which they will not be.
-const RECOVERY_RATE:[f64;2] = [0.00044264,0.00066390]; //Lower and upper range that increases with age
+// const RECOVERY_RATE:[f64;2] = [0.00044264,0.00066390]; //Lower and upper range that increases with age
+const RECOVERY_RATE:[f64;2] = [0.002,0.008]; //Lower and upper range that increases with age
 
 
 const NO_TO_COLONIZE:u32 = 100;
@@ -493,10 +494,10 @@ const PROBABILITY_OF_FAECAL_DROP:f64 = 0.3;
 impl host{
     fn recover(mut vector:&mut Vec<host>,rec0:f64,rec1:f64){
         vector.iter_mut().for_each(|mut x| {
-            if x.infected && x.motile == 0 && !x.colonized{
-                let grad:f64 = (rec1-rec0)/(MAX_AGE - MIN_AGE);
-                let prob:f64 = rec0+(x.age-MIN_AGE) * grad;
-                if roll(prob){
+            let grad:f64 = (rec1-rec0)/(MAX_AGE - MIN_AGE);
+            let prob:f64 = rec0+(x.age-MIN_AGE) * grad;            
+            if roll(prob){
+                if x.infected && x.motile == 0 && !x.colonized{
                     x.infected = false;
                     x.colonized = false;
                     x.time_infected = 0.0;
@@ -1435,12 +1436,12 @@ fn calculate_percentile(data: &Vec<[f64; 9]>, percentile: f64) -> f64 {
 
 fn main(){
     let ind:Vec<usize> = vec![5];
-    let epochs:usize = 1000;
+    let epochs:usize = 10000;
     //Changing parameter values 
     //parameters vector is to contain the following parameters in order : [ADJUSTED COLONIZATION TIME 0,ADJUSTED COLONIZATION TIME 1,Deposit probability (horizontal), recovery rate 0, recovery rate 1, probability of disease transmission (contact),feed infection probability ]
     let parameters:[f64;8] = [ADJUSTED_TIME_TO_COLONIZE[0],ADJUSTED_TIME_TO_COLONIZE[1],PROBABILITY_OF_HORIZONTAL_TRANSMISSION,RECOVERY_RATE[0],RECOVERY_RATE[1],LISTOFPROBABILITIES[0],FEED_INFECTION_RATE,HOST_0];
     // let delta:Vec<[f64;9]> = parameterize(ind.clone(),epochs,1,vec![[0.1,0.9,0.1]],vec![(168,50.0),(336,48.9),(504,42.5),(672,52.5),(840,60.0),(1008,70.0),(1176,70.0),(1344,70.0)]); //percentage values MUST be in percentage NOT actual <1 numbers -> reason: using MSE
-    let delta:Vec<[f64;9]> = parameterize(ind.clone(),epochs,1,vec![[0.01,0.75,0.075]],vec![(168,17.5),(336,35.0),(504,45.0),(672,55.0),(840,62.5),(1008,72.5),(1176,72.5),(1344,72.5)]); //percentage values MUST be in percentage NOT actual <1 numbers -> reason: using MSE
+    let delta:Vec<[f64;9]> = parameterize(ind.clone(),epochs,1,vec![[0.05,0.99,0.1]],vec![(168,17.5),(336,35.0),(504,45.0),(672,55.0),(840,62.5),(1008,72.5),(1176,72.5),(1344,72.5)]); //percentage values MUST be in percentage NOT actual <1 numbers -> reason: using MSE
     println!("------------------------------------------------------------------------------------------");
     // println!("Optimized variable value is now operation is {} versus the original {}, with a final MSE score of {}",delta[delta.len()-1][6], (0.95+0.1)/2.0,delta[delta.len()-1][8]);
 
