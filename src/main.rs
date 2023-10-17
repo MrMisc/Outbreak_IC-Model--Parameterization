@@ -366,6 +366,7 @@ pub struct host{
     x:f64,
     y:f64,
     z:f64, //can be 0 if there is no verticality
+    perched:bool,
     age:f64,  //Age of host
     time:f64, //Time chicken has spent in facility - start from 0.0 from zone 0
     origin_x:u64,
@@ -381,8 +382,8 @@ pub struct host{
 const ACCELERATION:f64 = 0.4; //factor by which delta is decreased as we approach better fit value i.e. Bigger value -> More aggressive
 const DECELERATION:f64 = 0.1; //factor that represents the percentage value of a delta change we take as rate of objective function decrease (trending towards ideal solution - decreases)
 const PINPOINT:bool = false;
-const PERCENTILE_MONITOR:f64 = 0.02; // 10th percentile values of all tests
-const WEIGHT:f64 = 0.5; //percentage that this concert of best fit parameter estimates continue to influence the parameter estimate
+const PERCENTILE_MONITOR:f64 = 0.01; // 10th percentile values of all tests
+const WEIGHT:f64 = 0.4; //percentage that this concert of best fit parameter estimates continue to influence the parameter estimate
 // const WEIGHT_INITIATION_POINT:usize = 5; //When do we weight for the percentile parameters?How many 
 //I.e. Smaller figure -> More punishing
 //Resolution
@@ -421,11 +422,20 @@ const LISTOFPROBABILITIES:[f64;1] = [0.15]; //Probability of transfer of samonel
 const GRIDSIZE:[[f64;3];1] = [[120.0,4.0,4.0]];
 const MAX_MOVE:f64 = 1.0;
 const MEAN_MOVE:f64 = 0.5;
-const STD_MOVE:f64 = 1.0; // separate movements for Z config
+const STD_MOVE:f64 = 1.0; // separate movements for Z config    
 const MAX_MOVE_Z:f64 = 1.0;
 const MEAN_MOVE_Z:f64 = 2.0;
 const STD_MOVE_Z:f64 = 4.0;
 const NO_OF_HOSTS_PER_SEGMENT:[u64;1] = [2];
+//Anchor points
+//Vertical perches
+const PERCH:bool = false;
+const PERCH_HEIGHT:f64 = 2.0; //Number to be smaller than segment range z -> Denotes frequency of heights at which hens can perch
+const PERCH_FREQ:f64 = 0.15; //probability that chickens go to perch
+const DEPERCH_FREQ:f64 = 0.4; //probability that a chicken when already on perch, decides to go down from perch
+//Nesting areas
+const NEST:bool = false;
+const NESTING_AREA:f64 = 0.25; //ratio of the total area of segment in of which nesting area is designated - min x y z side
 //Space --- Segment ID
 const TRANSFERS_ONLY_WITHIN:[bool;1] = [false]; //Boolean that informs simulation to only allow transmissions to occur WITHIN segments, not between adjacent segments
 //Fly option
@@ -628,19 +638,19 @@ impl host{
         //We shall make it such that the chicken is spawned within the bottom left corner of each "restricted grid" - ie cage
         let prob:f64 = probability;
         //Add a random age generator
-        host{infected:false,number_of_times_infected:0,time_infected:0.0,generation_time:gamma(atc0,atc1)*24.0,colonized:false,motile:0,zone:zone,prob1:prob,prob2:std,x:loc_x as f64,y:loc_y as f64,z:loc_z as f64,age:normal_(MIN_AGE,MEAN_AGE,STD_AGE,MAX_AGE),time:0.0, origin_x:loc_x as u64,origin_y:loc_y as u64,origin_z: loc_z as u64,restrict:restriction,range_x:range_x,range_y:range_y,range_z:range_z}
+        host{infected:false,number_of_times_infected:0,time_infected:0.0,generation_time:gamma(atc0,atc1)*24.0,colonized:false,motile:0,zone:zone,prob1:prob,prob2:std,x:loc_x as f64,y:loc_y as f64,z:loc_z as f64,perched:false,age:normal_(MIN_AGE,MEAN_AGE,STD_AGE,MAX_AGE),time:0.0, origin_x:loc_x as u64,origin_y:loc_y as u64,origin_z: loc_z as u64,restrict:restriction,range_x:range_x,range_y:range_y,range_z:range_z}
     }
     fn new_inf(zone:usize, std:f64,loc_x:f64, loc_y:f64,loc_z:f64,restriction:bool,range_x:u64,range_y:u64,range_z:u64, atc0:f64, atc1:f64,probability:f64)->host{ //presumably a newly infected chicken that spreads disease is colonized
         let prob:f64 = probability;
-        host{infected:true,number_of_times_infected:0,time_infected:0.0,generation_time:gamma(atc0,atc1)*24.0,colonized:true,motile:0,zone:zone,prob1:prob,prob2:std,x:loc_x as f64,y:loc_y as f64,z:loc_z as f64,age:normal_(MIN_AGE,MEAN_AGE,STD_AGE,MAX_AGE),time:0.0, origin_x:loc_x as u64,origin_y:loc_y as u64,origin_z: loc_z as u64,restrict:restriction,range_x:range_x,range_y:range_y,range_z:range_z}
+        host{infected:true,number_of_times_infected:0,time_infected:0.0,generation_time:gamma(atc0,atc1)*24.0,colonized:true,motile:0,zone:zone,prob1:prob,prob2:std,x:loc_x as f64,y:loc_y as f64,z:loc_z as f64,perched:false,age:normal_(MIN_AGE,MEAN_AGE,STD_AGE,MAX_AGE),time:0.0, origin_x:loc_x as u64,origin_y:loc_y as u64,origin_z: loc_z as u64,restrict:restriction,range_x:range_x,range_y:range_y,range_z:range_z}
     }
-    fn deposit(self, consumable: bool, prob:f64)->host{ //Direct way to lay deposit from host. The function is 100% deterministic and layering a probability clause before this is typically expected
+    fn deposit(&mut self, consumable: bool,prob:f64)->host{ //Direct way to lay deposit from host. The function is 100% deterministic and layering a probability clause before this is typically expected
         let zone = self.zone.clone();
-        let prob1 = self.prob1.clone();
-        let prob2 = self.prob2.clone();
-        let x = self.x.clone();
-        let y = self.y.clone();
-        let mut z = self.z.clone();
+        let prob1:f64 = self.prob1.clone();
+        let prob2:f64 = self.prob2.clone();
+        let mut x:f64 = self.x.clone();
+        let mut y:f64= self.y.clone();
+        let mut z = self.origin_z.clone() as f64;
         if !RESTRICTION{ //If there are no containers holding the hosts (ie RESTRICTION), these hosts are keeping themselves above z = 0 by flying/floating etc, then deposits will necessary FALL to the floor ie z = 0
             z = 0.0;
         }
@@ -662,16 +672,26 @@ impl host{
         let origin_x = self.origin_x.clone();
         let origin_y = self.origin_y.clone();
         let origin_z = self.origin_z.clone();
-
         // println!("EGG BEING LAID");
         //Logic: If infected, immediately count as colonized for egg and faeces. Don't need to wait for it to be considered an infectant whichever colonization or non colonization model we use
         if consumable{
-            host{infected:inf,number_of_times_infected:0,time_infected:0.0,generation_time:self.generation_time,colonized:inf,motile:1,zone:zone,prob1:prob1,prob2:prob2,x:x,y:y,z:z,age:0.0,time:0.0,origin_x:x as u64,origin_y:y as u64,origin_z:z as u64,restrict:restriction,range_x:range_x,range_y:range_y,range_z:range_z}
+            //Nesting logic application
+            if NEST{
+                //egg location
+                x = uniform(origin_x as f64, origin_x as f64 + NESTING_AREA*(range_x as f64));
+                y = uniform(origin_y as f64, origin_y as f64 + NESTING_AREA*(range_y as f64));
+                //chicken location
+                self.perched = false;
+                self.x = x.clone();
+                self.y = y.clone();
+            }
+            host{infected:inf,number_of_times_infected:0,time_infected:0.0,generation_time:self.generation_time,colonized:inf,motile:1,zone:zone,prob1:prob1,prob2:prob2,x:x,y:y,z:z,perched:false,age:0.0,time:0.0,origin_x:x as u64,origin_y:y as u64,origin_z:z as u64,restrict:restriction,range_x:range_x,range_y:range_y,range_z:range_z}
+            //Returning new egg host to host vector
         }
         else{//fecal shedding
 
             // println!("Pooping!");
-            host{infected:inf,number_of_times_infected:0,time_infected:0.0,generation_time:self.generation_time,colonized:inf,motile:2,zone:zone,prob1:prob1,prob2:prob2,x:x,y:y,z:z,age:0.0,time:0.0,origin_x:x as u64,origin_y:y as u64,origin_z:z as u64,restrict:restriction,range_x:range_x,range_y:range_y,range_z:range_z}
+            host{infected:inf,number_of_times_infected:0,time_infected:0.0,generation_time:self.generation_time,colonized:inf,motile:2,zone:zone,prob1:prob1,prob2:prob2,x:x,y:y,z:z,perched:false,age:0.0,time:0.0,origin_x:x as u64,origin_y:y as u64,origin_z:z as u64,restrict:restriction,range_x:range_x,range_y:range_y,range_z:range_z}
         }
     }
     fn deposit_all(vector:Vec<host>, probability:f64)->Vec<host>{
@@ -739,26 +759,38 @@ impl host{
                 }
             }
 
-            let mut new_x:f64 = self.origin_x.clone() as f64;
-            let mut new_y:f64 = self.origin_y.clone() as f64;
-            let mut new_z:f64 = self.origin_z.clone() as f64;
+            let mut new_x:f64 = self.x.clone() as f64;
+            let mut new_y:f64 = self.y.clone() as f64;
+            let mut new_z:f64 = self.z.clone() as f64;
             //use truncated normal distribution (which has been forced to be normal) in order to change the values of x and y accordingly of the host - ie movement
             if self.restrict{
                 // println!("We are in the restrict clause! {}", self.motile);
                 // println!("Current shuffling parameter is {}", self.motile);
                 new_x = limits::min(limits::max(self.origin_x as f64,self.x+mult[0]*normal(MEAN_MOVE,STD_MOVE,MAX_MOVE)),self.origin_x as f64+self.range_x as f64);
-                new_y = limits::min(limits::max(self.origin_y as f64,self.y+mult[1]*normal(MEAN_MOVE,STD_MOVE,MAX_MOVE)),self.origin_y as f64+self.range_y as f64);
+                if !self.perched{new_y = limits::min(limits::max(self.origin_y as f64,self.y+mult[1]*normal(MEAN_MOVE,STD_MOVE,MAX_MOVE)),self.origin_y as f64+self.range_y as f64);}
                 if FLY{
                     new_z = limits::min(limits::max(self.origin_z as f64,self.z+mult[2]*normal(MEAN_MOVE_Z,STD_MOVE_Z,MAX_MOVE_Z)),self.origin_z as f64+self.range_z as f64);
+                }else if PERCH && roll(PERCH_FREQ){ //no need perching concept for flying creatures
+                    new_z = limits::min(self.z+PERCH_HEIGHT, self.origin_z as f64+self.range_z as f64);
+                    self.perched = true;
+                }else if PERCH && roll(DEPERCH_FREQ){
+                    new_z = self.origin_z as f64;
+                    self.perched = false;
                 }
             }else{
                 new_x = limits::min(limits::max(0.0,self.x+mult[0]*normal(MEAN_MOVE,STD_MOVE,MAX_MOVE)),GRIDSIZE[self.zone as usize][0]);
-                new_y = limits::min(limits::max(0.0,self.y+mult[1]*normal(MEAN_MOVE,STD_MOVE,MAX_MOVE)),GRIDSIZE[self.zone as usize][1]);        
+                if !self.perched{new_y = limits::min(limits::max(0.0,self.y+mult[1]*normal(MEAN_MOVE,STD_MOVE,MAX_MOVE)),GRIDSIZE[self.zone as usize][1]);}
                 if FLY{
                     new_z = limits::min(limits::max(0.0,self.z+mult[2]*normal(MEAN_MOVE_Z,STD_MOVE_Z,MAX_MOVE_Z)),GRIDSIZE[self.zone as usize][2]);
+                }else if PERCH && roll(PERCH_FREQ){ //no need perching concept for flying creatures
+                    new_z = limits::min(self.z+PERCH_HEIGHT, self.origin_z as f64+self.range_z as f64);
+                    self.perched = true;
+                }else if PERCH && roll(DEPERCH_FREQ){
+                    new_z = self.origin_z as f64;
+                    self.perched = false;
                 }
             }            
-            host{infected:self.infected,number_of_times_infected:0,time_infected:self.time_infected,generation_time:self.generation_time,colonized:self.colonized,motile:self.motile,zone:self.zone,prob1:self.prob1,prob2:self.prob2,x:new_x,y:new_y,z:self.z,age:self.age+1.0/HOUR_STEP,time:self.time+1.0/HOUR_STEP,origin_x:self.origin_x,origin_y:self.origin_y,origin_z:self.origin_z,restrict:self.restrict,range_x:self.range_x,range_y:self.range_y,range_z:self.range_z}
+            host{infected:self.infected,number_of_times_infected:0,time_infected:self.time_infected,generation_time:self.generation_time,colonized:self.colonized,motile:self.motile,zone:self.zone,prob1:self.prob1,prob2:self.prob2,x:new_x,y:new_y,z:self.z,perched:self.perched,age:self.age+1.0/HOUR_STEP,time:self.time+1.0/HOUR_STEP,origin_x:self.origin_x,origin_y:self.origin_y,origin_z:self.origin_z,restrict:self.restrict,range_x:self.range_x,range_y:self.range_y,range_z:self.range_z}
         }else if self.motile==0 && EVISCERATE_ZONES.contains(&self.zone){
             // println!("Evisceration pending...");
             // self.motile == 1; //It should be presumably electrocuted and hung on a conveyer belt
@@ -1435,13 +1467,13 @@ fn calculate_percentile(data: &Vec<[f64; 9]>, percentile: f64) -> f64 {
 }
 
 fn main(){
-    let ind:Vec<usize> = vec![5];
-    let epochs:usize = 10000;
+    let ind:Vec<usize> = vec![3,4,5];
+    let epochs:usize = 500;
     //Changing parameter values 
     //parameters vector is to contain the following parameters in order : [ADJUSTED COLONIZATION TIME 0,ADJUSTED COLONIZATION TIME 1,Deposit probability (horizontal), recovery rate 0, recovery rate 1, probability of disease transmission (contact),feed infection probability ]
     let parameters:[f64;8] = [ADJUSTED_TIME_TO_COLONIZE[0],ADJUSTED_TIME_TO_COLONIZE[1],PROBABILITY_OF_HORIZONTAL_TRANSMISSION,RECOVERY_RATE[0],RECOVERY_RATE[1],LISTOFPROBABILITIES[0],FEED_INFECTION_RATE,HOST_0];
     // let delta:Vec<[f64;9]> = parameterize(ind.clone(),epochs,1,vec![[0.1,0.9,0.1]],vec![(168,50.0),(336,48.9),(504,42.5),(672,52.5),(840,60.0),(1008,70.0),(1176,70.0),(1344,70.0)]); //percentage values MUST be in percentage NOT actual <1 numbers -> reason: using MSE
-    let delta:Vec<[f64;9]> = parameterize(ind.clone(),epochs,1,vec![[0.05,0.99,0.1]],vec![(168,17.5),(336,35.0),(504,45.0),(672,55.0),(840,62.5),(1008,72.5),(1176,72.5),(1344,72.5)]); //percentage values MUST be in percentage NOT actual <1 numbers -> reason: using MSE
+    let delta:Vec<[f64;9]> = parameterize(ind.clone(),epochs,1,vec![[0.001,0.007,0.0002],[0.007,0.01,0.003],[0.1,0.9,0.1]],vec![(168,17.5),(336,35.0),(504,45.0),(672,55.0),(840,62.5),(1008,72.5),(1176,72.5),(1344,72.5)]); //percentage values MUST be in percentage NOT actual <1 numbers -> reason: using MSE
     println!("------------------------------------------------------------------------------------------");
     // println!("Optimized variable value is now operation is {} versus the original {}, with a final MSE score of {}",delta[delta.len()-1][6], (0.95+0.1)/2.0,delta[delta.len()-1][8]);
 
