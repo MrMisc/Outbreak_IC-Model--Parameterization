@@ -12,7 +12,31 @@ Another big issue that a user can come across when trying to estimate a paramete
 
 
 
-Finally, it is important that the steps that the user sets for the algorithm to take, at least be greater than or equal to 1/10th of the range of the parameter values that the user has set the model to allow to explore. Any lower and they risk omitting entire ranges of possible solutions within the provided range.
+Finally, it is important that the steps that the user sets for the algorithm to take, at least be greater than or equal to 1/10th of the range of the parameter values that the user has set the model to allow to explore. Any lower and they risk omitting entire ranges of possible solutions 
+within the provided range.
 
+
+
+
+## Sample Results
+
+Epoch plots are outputted to clearly demonstrate if the code has managed to navigate to a potential solution. 
+
+The **factor plots** are ideal when we are fitting multiple parameters to arrive at a solution. This is because sometimes we are not necessarily able to identify the general set of ideal solutions for the parameters from reading the epoch plot alone.
+
+All plots are plotly outputs that have been adjusted to show the relevant information for the user to read and determine the ideal set of parameters as a solution.
+### Epoch plot
+
+Showcasing how the code can explore and try to minimise the ideal parameter estimates based off of MSE discrepancy.
+
+![newplot (1)](https://github.com/MrMisc/Outbreak_IC-Model--Parameterization/assets/100022747/143c03d1-23cd-4be5-b3f2-5f585ba1a4a2)
+
+### Contact transmission probability
+
+![PD](https://github.com/MrMisc/Outbreak_IC-Model--Parameterization/assets/100022747/d535fd26-e50f-4cfc-ba4b-c2176ff703ce)
+
+### Original number of Host 0s
+
+![Host0](https://github.com/MrMisc/Outbreak_IC-Model--Parameterization/assets/100022747/20ab2261-c5b1-476b-adf4-59a71e2d080c)
 
 
